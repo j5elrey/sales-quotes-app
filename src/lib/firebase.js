@@ -7,12 +7,13 @@ import { getStorage } from 'firebase/storage';
 // Firebase configuration object
 // NOTE: Replace these values with your actual Firebase project configuration
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBcLfZYZaNlJ1e_RNU4ZfqI57FAk7VpGL8",
+  authDomain: "ventas-cotizaciones.firebaseapp.com",
+  projectId: "ventas-cotizaciones",
+  storageBucket: "ventas-cotizaciones.firebasestorage.app",
+  messagingSenderId: "862823015171",
+  appId: "1:862823015171:web:42eeef6fac1717774ebf36",
+  measurementId: "G-WNJ8E506V2"
 };
 
 // Initialize Firebase
