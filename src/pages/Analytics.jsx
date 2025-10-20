@@ -10,6 +10,7 @@ import { es } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { Download } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const Analytics = () => {
   const { currentUser } = useAuth();
@@ -20,6 +21,7 @@ const Analytics = () => {
   const [totalSales, setTotalSales] = useState(0);
   const [averageSale, setAverageSale] = useState(0);
   const [totalOrders, setTotalOrders] = useState(0);
+  const [chartData, setChartData] = useState([]);
 
   useEffect(() => {
     loadSales();
@@ -42,6 +44,54 @@ const Analytics = () => {
     } catch (error) {
       console.error('Error al cargar ventas:', error);
     }
+  };
+
+  const prepareChartData = (salesToChart, range) => {
+    const dataMap = new Map();
+
+    salesToChart.forEach(sale => {
+      const saleDate = sale.createdAt?.toDate();
+      if (!saleDate) return;
+
+      let key;
+      let label;
+
+      switch (range) {
+        case 'day':
+          key = format(saleDate, 'HH'); // Group by hour
+          label = `${key}:00`;
+          break;
+        case 'week':
+          key = format(saleDate, 'yyyy-MM-dd'); // Group by day
+          label = format(saleDate, 'EEE d', { locale: es });
+          break;
+        case 'month':
+          key = format(saleDate, 'yyyy-ww'); // Group by week
+          label = `Semana ${format(saleDate, 'ww', { locale: es })}`;
+          break;
+        case 'semester':
+        case 'year':
+          key = format(saleDate, 'yyyy-MM'); // Group by month
+          label = format(saleDate, 'MMM yyyy', { locale: es });
+          break;
+        default:
+          key = format(saleDate, 'yyyy-MM');
+          label = format(saleDate, 'MMM yyyy', { locale: es });
+      }
+
+      if (!dataMap.has(key)) {
+        dataMap.set(key, { name: label, totalSales: 0 });
+      }
+      dataMap.get(key).totalSales += sale.total || 0;
+    });
+
+    const sortedData = Array.from(dataMap.values()).sort((a, b) => {
+      // Simple sorting for now, can be improved for specific ranges
+      if (range === 'day') return parseInt(a.name) - parseInt(b.name);
+      if (range === 'week') return new Date(a.name) - new Date(b.name);
+      return a.name.localeCompare(b.name);
+    });
+    setChartData(sortedData);
   };
 
   const filterSalesByTimeRange = () => {
@@ -89,6 +139,7 @@ const Analytics = () => {
     setTotalSales(total);
     setTotalOrders(filtered.length);
     setAverageSale(filtered.length > 0 ? total / filtered.length : 0);
+    prepareChartData(filtered, timeRange);
   };
 
   const exportToExcel = () => {
@@ -237,6 +288,23 @@ const Analytics = () => {
 
       <Card>
         <CardHeader>
+          <CardTitle>Ventas por Período</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip formatter={(value) => formatCurrency(value)} />
+              <Bar dataKey="totalSales" fill="#8884d8" />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Detalle de Ventas</CardTitle>
         </CardHeader>
         <CardContent>
@@ -297,4 +365,3 @@ const Analytics = () => {
 };
 
 export default Analytics;
-

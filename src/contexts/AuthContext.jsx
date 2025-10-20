@@ -5,6 +5,8 @@ import {
   GoogleAuthProvider, 
   OAuthProvider,
   signOut as firebaseSignOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   onAuthStateChanged 
 } from 'firebase/auth';
 
@@ -26,6 +28,27 @@ export function AuthProvider({ children }) {
       return result.user;
     } catch (error) {
       console.error("Error signing in with Google:", error);
+      throw error;
+    }
+  };
+
+  // Sign in with Email and Password
+  const signup = async (email, password) => {
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      return result.user;
+    } catch (error) {
+      console.error("Error signing up with email and password:", error);
+      throw error;
+    }
+  };
+
+  const login = async (email, password) => {
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      return result.user;
+    } catch (error) {
+      console.error("Error logging in with email and password:", error);
       throw error;
     }
   };
@@ -65,6 +88,8 @@ export function AuthProvider({ children }) {
     currentUser,
     signInWithGoogle,
     signInWithApple,
+    signup,
+    login,
     signOut
   };
 
@@ -74,4 +99,3 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 }
-

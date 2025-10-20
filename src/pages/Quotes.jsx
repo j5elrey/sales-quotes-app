@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, FileText, Share2, ShoppingCart } from 'lucide-react';
+import { Plus, FileText, Share2, ShoppingCart, Eye } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { generateQuotePDF } from '@/lib/pdfUtils';
 import { useAuth } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -15,6 +17,8 @@ const Quotes = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [quotes, setQuotes] = useState([]);
+  const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
+  const [selectedQuote, setSelectedQuote] = useState(null);
 
   useEffect(() => {
     loadQuotes();
@@ -45,7 +49,37 @@ const Quotes = () => {
       // Navigate to create sale with quote data
       navigate(`/sales/new?quoteId=${quoteId}`);
     } catch (error) {
-      console.error('Error al convertir cotización:', error);
+      console.error("Error al convertir cotización:", error);
+    }
+  };
+
+  const handleViewPDF = async (quote) => {
+    setSelectedQuote(quote);
+    setPdfDialogOpen(true);
+
+    // Generar el PDF y guardarlo en el estado para la vista previa
+    try {
+      const logoUrl = localStorage.getItem("logoUrl");
+      const companyDataStr = localStorage.getItem("companyData");
+      const companyData = companyDataStr ? JSON.parse(companyDataStr) : null;
+
+      const doc = await generateQuotePDF(
+        quote,
+        {
+          name: quote.clientName,
+          email: quote.clientEmail || "",
+          phone: quote.clientPhone || "",
+        },
+        quote.items,
+        (value) => `$${value.toFixed(2)}`, // Asumiendo que formatCurrency es similar
+        logoUrl,
+        companyData
+      );
+      const pdfData = doc.output("datauristring");
+      setSelectedQuote((prev) => ({ ...prev, pdfData }));
+    } catch (error) {
+      console.error("Error al generar PDF para vista previa:", error);
+      alert("Error al generar el PDF para vista previa");
     }
   };
 
@@ -70,83 +104,111 @@ const Quotes = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Cotizaciones</h1>
-          <p className="text-muted-foreground mt-1">
-            Gestiona tus cotizaciones
-          </p>
+    <>
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold">Cotizaciones</h1>
+            <p className="text-muted-foreground mt-1">
+              Gestiona tus cotizaciones
+            </p>
+          </div>
+          <Button onClick={() => navigate('/quotes/new')}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nueva Cotización
+          </Button>
         </div>
-        <Button onClick={() => navigate('/quotes/new')}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nueva Cotización
-        </Button>
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Historial de Cotizaciones</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {quotes.length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Historial de Cotizaciones</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
-                    No hay cotizaciones registradas
-                  </TableCell>
+                  <TableHead>ID</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
-              ) : (
-                quotes.map((quote) => (
-                  <TableRow key={quote.id}>
-                    <TableCell className="font-mono text-sm">
-                      {quote.id.substring(0, 8).toUpperCase()}
+              </TableHeader>
+              <TableBody>
+                {quotes.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      No hay cotizaciones registradas
                     </TableCell>
-                    <TableCell>{quote.clientName}</TableCell>
-                    <TableCell>
-                      {quote.createdAt && format(quote.createdAt.toDate(), 'dd/MM/yyyy', { locale: es })}
-                    </TableCell>
-                    <TableCell>${quote.total?.toFixed(2)}</TableCell>
-                    <TableCell>{getStatusBadge(quote.status)}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate(`/quotes/${quote.id}`)}
-                      >
-                        <FileText className="h-4 w-4" />
-                      </Button>
-                      {quote.status !== 'converted' && (
+                  </TableRow>
+                ) : (
+                  quotes.map((quote) => (
+                    <TableRow key={quote.id}>
+                      <TableCell className="font-mono text-sm">
+                        {quote.id.substring(0, 8).toUpperCase()}
+                      </TableCell>
+                      <TableCell>{quote.clientName}</TableCell>
+                      <TableCell>
+                        {quote.createdAt && format(quote.createdAt.toDate(), 'dd/MM/yyyy', { locale: es })}
+                      </TableCell>
+                      <TableCell>${quote.total?.toFixed(2)}</TableCell>
+                      <TableCell>{getStatusBadge(quote.status)}</TableCell>
+                      <TableCell className="text-right space-x-2">
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleConvertToSale(quote.id)}
+                          onClick={() => handleViewPDF(quote)}
                         >
-                          <ShoppingCart className="h-4 w-4" />
+                          <Eye className="h-4 w-4" />
                         </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+                        {quote.status !== 'converted' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleConvertToSale(quote.id)}
+                          >
+                            <ShoppingCart className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* PDF Preview Dialog */}
+      <Dialog open={pdfDialogOpen} onOpenChange={setPdfDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Vista Previa - Cotización #{selectedQuote?.id.substring(0, 8).toUpperCase()}</DialogTitle>
+          </DialogHeader>
+          <div className="w-full h-[600px] bg-gray-100 rounded-lg overflow-auto">
+            {selectedQuote && selectedQuote.pdfData && (
+              <iframe
+                src={selectedQuote.pdfData}
+                className="w-full h-full"
+                title="PDF Preview"
+              />
+            )}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setPdfDialogOpen(false)}
+            >
+              Cerrar
+            </Button>
+            {/* Puedes añadir un botón para descargar aquí si lo deseas */}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
 export default Quotes;
-

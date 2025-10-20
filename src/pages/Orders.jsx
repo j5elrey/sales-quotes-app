@@ -21,21 +21,26 @@ const Orders = () => {
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
   const [newStatus, setNewStatus] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'pending', 'in-progress', 'completed', 'cancelled'
 
   useEffect(() => {
     if (!currentUser) return;
 
     // Suscribirse a cambios en tiempo real
     const unsubscribe = onSnapshot(collection(db, 'sales'), (snapshot) => {
-      const ordersData = snapshot.docs.map(doc => ({
+      let ordersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+
+      if (filterStatus !== 'all') {
+        ordersData = ordersData.filter(order => order.status === filterStatus);
+      }
       
       // Ordenar por fecha de entrega (más próxima primero)
       ordersData.sort((a, b) => {
-        const dateA = a.deliveryDate ? new Date(a.deliveryDate) : new Date(8640000000000000);
-        const dateB = b.deliveryDate ? new Date(b.deliveryDate) : new Date(8640000000000000);
+        const dateA = a.deliveryDate && a.deliveryDate.toDate ? a.deliveryDate.toDate() : new Date(8640000000000000);
+        const dateB = b.deliveryDate && b.deliveryDate.toDate ? b.deliveryDate.toDate() : new Date(8640000000000000);
         return dateA - dateB;
       });
       
@@ -43,11 +48,11 @@ const Orders = () => {
     });
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, filterStatus]);
 
   const isDeliveryDateUrgent = (deliveryDate) => {
-    if (!deliveryDate) return false;
-    const daysUntilDelivery = differenceInDays(new Date(deliveryDate), new Date());
+    if (!deliveryDate || !deliveryDate.toDate) return false;
+    const daysUntilDelivery = differenceInDays(deliveryDate.toDate(), new Date());
     return daysUntilDelivery <= 1 && daysUntilDelivery >= 0;
   };
 
@@ -66,6 +71,31 @@ const Orders = () => {
   const handleViewPDF = async (order) => {
     setSelectedOrder(order);
     setPdfDialogOpen(true);
+
+    // Generar el PDF y guardarlo en el estado para la vista previa
+    try {
+      const logoUrl = localStorage.getItem("logoUrl");
+      const companyDataStr = localStorage.getItem("companyData");
+      const companyData = companyDataStr ? JSON.parse(companyDataStr) : null;
+
+      const doc = await generateSalePDF(
+        order,
+        {
+          name: order.clientName,
+          email: order.clientEmail || "",
+          phone: order.clientPhone || "",
+        },
+        order.items,
+        formatCurrency,
+        logoUrl,
+        companyData
+      );
+      const pdfData = doc.output("datauristring");
+      setSelectedOrder((prev) => ({ ...prev, pdfData }));
+    } catch (error) {
+      console.error("Error al generar PDF para vista previa:", error);
+      alert("Error al generar el PDF para vista previa");
+    }
   };
 
   const handleDownloadPDF = async (order) => {
@@ -126,6 +156,22 @@ const Orders = () => {
         </p>
       </div>
 
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-semibold">Lista de Pedidos</h2>
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Filtrar por estado" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="pending">Pendiente</SelectItem>
+            <SelectItem value="in-progress">En Progreso</SelectItem>
+            <SelectItem value="completed">Completado</SelectItem>
+            <SelectItem value="cancelled">Cancelado</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="grid gap-4">
         {orders.length === 0 ? (
           <Card>
@@ -153,9 +199,8 @@ const Orders = () => {
                     <div className="text-right">
                       <div className="text-2xl font-bold">{formatCurrency(order.total)}</div>
                       <p className={`text-sm ${deliveryDateColor}`}>
-                        {order.deliveryDate
-                          ? format(new Date(order.deliveryDate), 'dd/MM/yyyy', { locale: es })
-                          : 'Sin fecha'}
+                        {order.deliveryDate && order.deliveryDate.toDate
+                            ? format(order.deliveryDate.toDate(), 'dd/MM/yyyy', { locale: es })                         : 'Sin fecha'}
                       </p>
                     </div>
                   </div>
@@ -181,8 +226,8 @@ const Orders = () => {
                       <div>
                         <p className="text-muted-foreground">Creado</p>
                         <p className="font-medium">
-                          {order.createdAt
-                            ? format(new Date(order.createdAt), 'dd/MM/yyyy', { locale: es })
+                          {order.createdAt && order.createdAt.toDate
+                            ? format(order.createdAt.toDate(), 'dd/MM/yyyy', { locale: es })
                             : '-'}
                         </p>
                       </div>
@@ -307,4 +352,3 @@ const Orders = () => {
 };
 
 export default Orders;
-
