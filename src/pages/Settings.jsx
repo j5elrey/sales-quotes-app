@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,10 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { db } from '@/lib/firebase';
-import { storage } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore'; // Importar setDoc y getDoc
 import { Save, Upload, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -25,33 +25,47 @@ const Settings = () => {
   });
   
   const [bankData, setBankData] = useState({
-    bank: 'Banco XYZ',
-    accountNumber: '1234567890',
-    accountHolder: 'Empresa XYZ'
+    bank: '', // Inicializar vacío para cargar de Firestore
+    accountNumber: '', // Inicializar vacío para cargar de Firestore
+    accountHolder: '' // Inicializar vacío para cargar de Firestore
   });
   
   const [logo, setLogo] = useState(null);
-  const [logoUrl, setLogoUrl] = useState(() => {
-    return localStorage.getItem('logoUrl') || null;
-  });
-  const [logoPreview, setLogoPreview] = useState(logoUrl);
+  const [logoUrl, setLogoUrl] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const [importMessage, setImportMessage] = useState('');
+  const [loadingSettings, setLoadingSettings] = useState(true); // Nuevo estado de carga
 
   useEffect(() => {
-    const savedBankData = localStorage.getItem('bankData');
-    if (savedBankData) {
-      setBankData(JSON.parse(savedBankData));
-    }
-    
-    const savedCompanyData = localStorage.getItem('companyData');
-    if (savedCompanyData) {
-      setCompanyData(JSON.parse(savedCompanyData));
-    }
-  }, []);
+    const loadUserSettings = async () => {
+      if (!currentUser) {
+        setLoadingSettings(false);
+        return;
+      }
+      try {
+        const userSettingsRef = doc(db, 'userSettings', currentUser.uid);
+        const docSnap = await getDoc(userSettingsRef);
+        if (docSnap.exists()) {
+          const settings = docSnap.data();
+          setCompanyData(settings.companyData || { name: '', address: '', phone: '' });
+          setBankData(settings.bankData || { bank: '', accountNumber: '', accountHolder: '' });
+          setLogoUrl(settings.logoUrl || null);
+          setLogoPreview(settings.logoUrl || null); // Mostrar logo cargado como preview
+          setLanguage(settings.language || 'es');
+          setCurrency(settings.currency || 'MXN');
+        }
+      } catch (error) {
+        console.error('Error al cargar la configuración del usuario:', error);
+      } finally {
+        setLoadingSettings(false);
+      }
+    };
+    loadUserSettings();
+  }, [currentUser, setLanguage, setCurrency]);
 
-  const handleLogoUpload = async (e) => {
+  const handleLogoUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       setLogo(file);
@@ -64,6 +78,10 @@ const Settings = () => {
   };
 
   const handleSaveLogo = async () => {
+    if (!currentUser) {
+      alert('Debes iniciar sesión para guardar el logo.');
+      return;
+    }
     if (!logo) {
       alert('Selecciona una imagen de logo');
       return;
@@ -74,32 +92,71 @@ const Settings = () => {
       await uploadBytes(storageRef, logo);
       const url = await getDownloadURL(storageRef);
       setLogoUrl(url);
-      localStorage.setItem('logoUrl', url);
+      setLogoPreview(url);
+      // Guardar URL del logo en Firestore
+      const userSettingsRef = doc(db, 'userSettings', currentUser.uid);
+      await setDoc(userSettingsRef, { logoUrl: url }, { merge: true });
+
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
-      setLogo(null);
+      setLogo(null); // Limpiar el archivo seleccionado después de subir
     } catch (error) {
       console.error('Error al guardar logo:', error);
       alert('Error al guardar el logo');
     }
   };
 
-  const handleDeleteLogo = () => {
-    setLogoUrl(null);
-    setLogoPreview(null);
-    localStorage.removeItem('logoUrl');
+  const handleDeleteLogo = async () => {
+    if (!currentUser) return;
+    try {
+      // Eliminar URL del logo de Firestore
+      const userSettingsRef = doc(db, 'userSettings', currentUser.uid);
+      await setDoc(userSettingsRef, { logoUrl: null }, { merge: true });
+
+      setLogoUrl(null);
+      setLogoPreview(null);
+      // Opcional: Eliminar el archivo del storage de Firebase si es necesario
+      // const storageRef = ref(storage, `logos/${currentUser.uid}/logo`);
+      // await deleteObject(storageRef);
+      alert('Logo eliminado exitosamente.');
+    } catch (error) {
+      console.error('Error al eliminar logo:', error);
+      alert('Error al eliminar el logo.');
+    }
   };
 
-  const handleSaveCompanyData = () => {
-    localStorage.setItem('companyData', JSON.stringify(companyData));
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+  const handleSaveCompanyData = async () => {
+    if (!currentUser) {
+      alert('Debes iniciar sesión para guardar los datos de la empresa.');
+      return;
+    }
+    try {
+      const userSettingsRef = doc(db, 'userSettings', currentUser.uid);
+      await setDoc(userSettingsRef, { companyData: companyData }, { merge: true });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      alert('Datos de empresa guardados exitosamente.');
+    } catch (error) {
+      console.error('Error al guardar datos de empresa:', error);
+      alert('Error al guardar los datos de la empresa.');
+    }
   };
 
-  const handleSaveBankData = () => {
-    localStorage.setItem('bankData', JSON.stringify(bankData));
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+  const handleSaveBankData = async () => {
+    if (!currentUser) {
+      alert('Debes iniciar sesión para guardar los datos bancarios.');
+      return;
+    }
+    try {
+      const userSettingsRef = doc(db, 'userSettings', currentUser.uid);
+      await setDoc(userSettingsRef, { bankData: bankData }, { merge: true });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      alert('Datos bancarios guardados exitosamente.');
+    } catch (error) {
+      console.error('Error al guardar datos bancarios:', error);
+      alert('Error al guardar los datos bancarios.');
+    }
   };
 
   const handleCompanyDataChange = (field, value) => {
@@ -188,6 +245,10 @@ const Settings = () => {
       setImportLoading(false);
     }
   };
+
+  if (loadingSettings) {
+    return <div className="text-center py-8">Cargando configuración...</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -319,7 +380,7 @@ const Settings = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Preferencias de Idioma y Moneda</CardTitle>
+          <CardTitle>Preferencias de la Aplicación</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>

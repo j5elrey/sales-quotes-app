@@ -1,41 +1,62 @@
+
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, FileText, Share2, ShoppingCart, Eye } from 'lucide-react';
+import { Plus, ShoppingCart, Eye } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { generateQuotePDF } from '@/lib/pdfUtils';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSettings } from '@/contexts/SettingsContext';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const Quotes = () => {
+  const { id } = useParams(); // Aunque `id` no se usa directamente aquí, se mantiene por si hay futuras expansiones.
   const { currentUser } = useAuth();
+  const { formatCurrency } = useSettings();
   const navigate = useNavigate();
+  
   const [quotes, setQuotes] = useState([]);
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
   const [selectedQuote, setSelectedQuote] = useState(null);
+  const [loading, setLoading] = useState(true); // Estado de carga
+  const [error, setError] = useState(null); // Estado de error
 
   useEffect(() => {
     loadQuotes();
-  }, [currentUser]);
+  }, [currentUser]); // Dependencia de currentUser para recargar si el usuario cambia
 
   const loadQuotes = async () => {
-    if (!currentUser) return;
-    
+    if (!currentUser) {
+      setQuotes([]); // Limpiar cotizaciones si no hay usuario autenticado
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
     try {
       const querySnapshot = await getDocs(collection(db, 'quotes'));
       const quotesData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      setQuotes(quotesData.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
-    } catch (error) {
-      console.error('Error al cargar cotizaciones:', error);
+      // Asegurarse de que createdAt sea un Timestamp antes de llamar a toDate()
+      setQuotes(quotesData.sort((a, b) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+        return dateB - dateA;
+      }));
+    } catch (err) {
+      console.error('Error al cargar cotizaciones:', err);
+      setError('Error al cargar las cotizaciones. Por favor, inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -46,10 +67,11 @@ const Quotes = () => {
         convertedAt: new Date()
       });
       
-      // Navigate to create sale with quote data
+      // Navegar para crear venta con datos de cotización
       navigate(`/sales/new?quoteId=${quoteId}`);
     } catch (error) {
       console.error("Error al convertir cotización:", error);
+      alert("Error al convertir la cotización a venta.");
     }
   };
 
@@ -59,6 +81,7 @@ const Quotes = () => {
 
     // Generar el PDF y guardarlo en el estado para la vista previa
     try {
+      // Obtener datos de la compañía y logo del localStorage (si existen)
       const logoUrl = localStorage.getItem("logoUrl");
       const companyDataStr = localStorage.getItem("companyData");
       const companyData = companyDataStr ? JSON.parse(companyDataStr) : null;
@@ -71,9 +94,10 @@ const Quotes = () => {
           phone: quote.clientPhone || "",
         },
         quote.items,
-        (value) => `$${value.toFixed(2)}`, // Asumiendo que formatCurrency es similar
-        logoUrl,
-        companyData
+        formatCurrency, // Usar la función formatCurrency del contexto
+        currentUser.uid,
+        logoUrl, // Pasar logoUrl
+        companyData // Pasar companyData
       );
       const pdfData = doc.output("datauristring");
       setSelectedQuote((prev) => ({ ...prev, pdfData }));
@@ -102,6 +126,14 @@ const Quotes = () => {
       </Badge>
     );
   };
+
+  if (loading) {
+    return <div className="text-center py-8">Cargando cotizaciones...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-8 text-red-500">{error}</div>;
+  }
 
   return (
     <>
@@ -152,7 +184,7 @@ const Quotes = () => {
                       <TableCell>
                         {quote.createdAt && format(quote.createdAt.toDate(), 'dd/MM/yyyy', { locale: es })}
                       </TableCell>
-                      <TableCell>${quote.total?.toFixed(2)}</TableCell>
+                      <TableCell>{formatCurrency(quote.total)}</TableCell>
                       <TableCell>{getStatusBadge(quote.status)}</TableCell>
                       <TableCell className="text-right space-x-2">
                         <Button
@@ -212,3 +244,4 @@ const Quotes = () => {
 };
 
 export default Quotes;
+

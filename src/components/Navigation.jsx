@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react';
+
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import {
   Home,
@@ -22,21 +25,44 @@ const Navigation = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState(null);
   const [companyName, setCompanyName] = useState('');
+  const [loadingSettings, setLoadingSettings] = useState(true);
+
+  const loadSettings = useCallback(async () => {
+    if (!currentUser) {
+      setCompanyName('Gestión de Ventas'); // Default if no user
+      setLogoUrl(null);
+      setLoadingSettings(false);
+      return;
+    }
+    setLoadingSettings(true);
+    try {
+      const userSettingsRef = doc(db, 'userSettings', currentUser.uid);
+      const docSnap = await getDoc(userSettingsRef);
+      if (docSnap.exists()) {
+        const settings = docSnap.data();
+        setLogoUrl(settings.logoUrl || null);
+        setCompanyName(settings.companyData?.name || 'Gestión de Ventas');
+      } else {
+        setLogoUrl(null);
+        setCompanyName('Gestión de Ventas');
+      }
+    } catch (error) {
+      console.error('Error al cargar la configuración del usuario:', error);
+      setCompanyName('Gestión de Ventas'); // Fallback on error
+      setLogoUrl(null);
+    } finally {
+      setLoadingSettings(false);
+    }
+  }, [currentUser]);
 
   useEffect(() => {
-    const savedLogoUrl = localStorage.getItem('logoUrl');
-    setLogoUrl(savedLogoUrl);
-    
-    const savedCompanyData = localStorage.getItem('companyData');
-    if (savedCompanyData) {
-      const data = JSON.parse(savedCompanyData);
-      setCompanyName(data.name || 'Gestión de Ventas');
-    }
-  }, []);
+    loadSettings();
+  }, [loadSettings]);
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate("/login");
+    window.location.reload(); // Forzar recarga completa para limpiar el estado
   };
 
   const menuItems = [
@@ -57,11 +83,19 @@ const Navigation = () => {
         {/* Logo Section */}
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center gap-3">
-            {logoUrl && (
+            {loadingSettings ? (
+              <div className="h-10 w-10 bg-gray-700 rounded-lg animate-pulse"></div>
+            ) : logoUrl ? (
               <img src={logoUrl} alt="Logo" className="h-10 w-10 rounded-lg object-cover" />
+            ) : (
+              <FileText className="h-10 w-10 text-gray-400" />
             )}
             <div className="flex-1">
-              <h1 className="text-lg font-bold text-white">{companyName}</h1>
+              {loadingSettings ? (
+                <div className="h-6 w-32 bg-gray-700 rounded animate-pulse"></div>
+              ) : (
+                <h1 className="text-lg font-bold text-white">{companyName}</h1>
+              )}
               <p className="text-xs text-slate-400">Gestión de Ventas</p>
             </div>
           </div>
@@ -104,10 +138,18 @@ const Navigation = () => {
       <nav className="lg:hidden fixed top-0 left-0 right-0 bg-slate-900 text-white border-b border-slate-800 z-50">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-2">
-            {logoUrl && (
+            {loadingSettings ? (
+              <div className="h-8 w-8 bg-gray-700 rounded animate-pulse"></div>
+            ) : logoUrl ? (
               <img src={logoUrl} alt="Logo" className="h-8 w-8 rounded object-cover" />
+            ) : (
+              <FileText className="h-8 w-8 text-gray-400" />
             )}
-            <span className="font-bold text-sm">{companyName}</span>
+            {loadingSettings ? (
+              <div className="h-5 w-24 bg-gray-700 rounded animate-pulse"></div>
+            ) : (
+              <span className="font-bold text-sm">{companyName}</span>
+            )}
           </div>
           <button
             onClick={() => setIsOpen(!isOpen)}
@@ -154,3 +196,4 @@ const Navigation = () => {
 };
 
 export default Navigation;
+

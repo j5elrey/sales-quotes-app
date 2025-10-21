@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '@/lib/firebase';
@@ -8,30 +9,48 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Plus, FileText, Share2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSettings } from '@/contexts/SettingsContext'; // Importar useSettings
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const Sales = () => {
   const { currentUser } = useAuth();
+  const { formatCurrency } = useSettings(); // Usar formatCurrency
   const navigate = useNavigate();
   const [sales, setSales] = useState([]);
+  const [loading, setLoading] = useState(true); // Estado de carga
+  const [error, setError] = useState(null); // Estado de error
 
   useEffect(() => {
     loadSales();
-  }, [currentUser]);
+  }, [currentUser]); // Dependencia de currentUser para recargar si el usuario cambia
 
   const loadSales = async () => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setSales([]); // Limpiar ventas si no hay usuario autenticado
+      setLoading(false);
+      return;
+    }
     
+    setLoading(true);
+    setError(null);
     try {
       const querySnapshot = await getDocs(collection(db, 'sales'));
       const salesData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      setSales(salesData.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
-    } catch (error) {
-      console.error('Error al cargar ventas:', error);
+      // Asegurarse de que createdAt sea un Timestamp antes de llamar a toDate()
+      setSales(salesData.sort((a, b) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+        return dateB - dateA;
+      }));
+    } catch (err) {
+      console.error('Error al cargar ventas:', err);
+      setError('Error al cargar las ventas. Por favor, inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -63,6 +82,14 @@ const Sales = () => {
       </Badge>
     );
   };
+
+  if (loading) {
+    return <div className="text-center py-8">Cargando ventas...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-8 text-red-500">{error}</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -113,7 +140,7 @@ const Sales = () => {
                     <TableCell>
                       {sale.createdAt && format(sale.createdAt.toDate(), 'dd/MM/yyyy', { locale: es })}
                     </TableCell>
-                    <TableCell>${sale.total?.toFixed(2)}</TableCell>
+                    <TableCell>{formatCurrency(sale.total)}</TableCell> {/* Usar formatCurrency */}
                     <TableCell>{getPaymentMethodLabel(sale.paymentMethod)}</TableCell>
                     <TableCell>{getStatusBadge(sale.status)}</TableCell>
                     <TableCell className="text-right">
