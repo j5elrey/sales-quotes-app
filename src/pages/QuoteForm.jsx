@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '@/lib/firebase';
@@ -36,6 +35,7 @@ const QuoteForm = () => {
   const [error, setError] = useState(null);
   const [companyData, setCompanyData] = useState(null);
   const [logoUrl, setLogoUrl] = useState(null);
+  const [processDialogOpen, setProcessDialogOpen] = useState(false); // Nuevo estado para el diálogo de procesos
 
   useEffect(() => {
     const fetchData = async () => {
@@ -133,18 +133,43 @@ const QuoteForm = () => {
   };
 
   const addItem = () => {
-    if (products.length === 0) {
+    const availableProducts = products.filter(p => p.category !== 'proceso'); // Filtrar procesos
+    if (availableProducts.length === 0) {
       alert('Primero debes agregar productos en la sección de Productos');
       return;
     }
     setItems([...items, {
-      productId: products[0].id,
-      product: products[0],
+      productId: availableProducts[0].id,
+      product: availableProducts[0],
       length: 1,
       width: 1,
       quantity: 1,
       observations: ''
     }]);
+  };
+
+  const addProcess = () => { // Nueva función para agregar procesos
+    const availableProcesses = products.filter(p => p.category === 'proceso');
+    if (availableProcesses.length === 0) {
+      alert('Primero debes agregar procesos en la sección de Productos');
+      return;
+    }
+    setProcessDialogOpen(true);
+  };
+
+  const handleSelectProcess = (processId) => { // Nueva función para seleccionar un proceso del diálogo
+    const selectedProcess = products.find(p => p.id === processId);
+    if (selectedProcess) {
+      setItems([...items, {
+        productId: selectedProcess.id,
+        product: selectedProcess,
+        length: 1,
+        width: 1,
+        quantity: 1,
+        observations: ''
+      }]);
+      setProcessDialogOpen(false);
+    }
   };
 
   const removeItem = (index) => {
@@ -272,6 +297,10 @@ const QuoteForm = () => {
     return <div className="text-center py-8 text-red-500">{error}</div>;
   }
 
+  // Filtrar productos (excluyendo procesos) y procesos
+  const availableProducts = products.filter(p => p.category !== 'proceso');
+  const availableProcesses = products.filter(p => p.category === 'proceso');
+
   return (
     <div className="space-y-6">
       <div>
@@ -297,7 +326,7 @@ const QuoteForm = () => {
                   <SelectContent>
                     {clients.map(client => (
                       <SelectItem key={client.id} value={client.id}>
-                        {client.name} - {client.email}
+                        {client.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -309,12 +338,20 @@ const QuoteForm = () => {
 
         <Card>
           <CardHeader>
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center gap-2"> {/* Añadido gap-2 para espacio entre botones */}
               <CardTitle>Productos</CardTitle>
-              <Button type="button" onClick={addItem} size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Agregar Producto
-              </Button>
+              <div className="flex gap-2">
+                <Button type="button" onClick={addItem} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Agregar Producto
+                </Button>
+                {availableProcesses.length > 0 && ( // Mostrar botón solo si hay procesos definidos
+                  <Button type="button" onClick={addProcess} size="sm" variant="outline">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Agregar Proceso
+                  </Button>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -411,40 +448,39 @@ const QuoteForm = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Resumen y Opciones</CardTitle>
+            <CardTitle>Configuración de Cotización</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-4">
+              <Label htmlFor="includeIVA">Incluir IVA (16%)</Label>
+              <input
+                id="includeIVA"
+                type="checkbox"
+                checked={includeIVA}
+                onChange={(e) => setIncludeIVA(e.target.checked)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="discount">Descuento (%)</Label>
+              <Input
+                id="discount"
+                type="number"
+                min="0"
+                max="100"
+                value={discountPercentage}
+                onChange={(e) => setDiscountPercentage(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="includeIVA" className="text-lg">Incluir IVA (16%)</Label>
-                <Input
-                  id="includeIVA"
-                  type="checkbox"
-                  checked={includeIVA}
-                  onChange={(e) => setIncludeIVA(e.target.checked)}
-                  className="w-5 h-5"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="discount" className="text-lg">Descuento</Label>
-                <Select value={discountPercentage.toString()} onValueChange={(value) => setDiscountPercentage(parseFloat(value))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona un descuento" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">0%</SelectItem>
-                    <SelectItem value="5">5%</SelectItem>
-                    <SelectItem value="10">10%</SelectItem>
-                    <SelectItem value="15">15%</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex justify-between items-center text-2xl font-bold">
-                <span>Total:</span>
-                <span>{formatCurrency(total)}</span>
-              </div>
+            <div className="text-4xl font-bold">
+              {formatCurrency(total)}
             </div>
           </CardContent>
         </Card>
@@ -453,8 +489,37 @@ const QuoteForm = () => {
           <Button type="submit" className="flex-1">
             {id ? 'Actualizar Cotización' : 'Guardar Cotización'}
           </Button>
+          <Button type="button" variant="outline" onClick={() => navigate('/quotes')}>
+            Cancelar
+          </Button>
         </div>
       </form>
+
+      {/* Diálogo para seleccionar procesos */}
+      <Dialog open={processDialogOpen} onOpenChange={setProcessDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Seleccionar Proceso</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {availableProcesses.map(process => (
+              <Button
+                key={process.id}
+                variant="outline"
+                className="w-full justify-start text-left"
+                onClick={() => handleSelectProcess(process.id)}
+              >
+                <div className="flex-1">
+                  <div className="font-medium">{process.name}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {formatCurrency(process.price)} - {process.type === 'm2' ? 'Metro cuadrado' : 'Metro lineal'}
+                  </div>
+                </div>
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
         <DialogContent>
@@ -462,56 +527,65 @@ const QuoteForm = () => {
             <DialogTitle>Compartir Cotización</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-2">
-              <Button
-                variant={shareMethod === 'download' ? 'default' : 'outline'}
-                onClick={() => setShareMethod('download')}
-              >
-                <FileDown className="h-4 w-4 mr-2" />
-                Descargar
-              </Button>
-              <Button
-                variant={shareMethod === 'email' ? 'default' : 'outline'}
-                onClick={() => setShareMethod('email')}
-              >
-                <Mail className="h-4 w-4 mr-2" />
-                Email
-              </Button>
-              <Button
-                variant={shareMethod === 'whatsapp' ? 'default' : 'outline'}
-                onClick={() => setShareMethod('whatsapp')}
-              >
-                <MessageCircle className="h-4 w-4 mr-2" />
-                WhatsApp
-              </Button>
+            <div>
+              <Label htmlFor="shareMethod">Método de Compartir</Label>
+              <Select value={shareMethod} onValueChange={setShareMethod}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="download">Descargar PDF</SelectItem>
+                  <SelectItem value="email">Enviar por Email</SelectItem>
+                  <SelectItem value="whatsapp">Enviar por WhatsApp</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            
+
             {shareMethod === 'email' && (
               <div>
-                <Label>Email (opcional)</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
+                  id="email"
                   type="email"
-                  placeholder="Email del cliente"
                   value={shareEmail}
                   onChange={(e) => setShareEmail(e.target.value)}
+                  placeholder="correo@ejemplo.com"
                 />
               </div>
             )}
-            
+
             {shareMethod === 'whatsapp' && (
               <div>
-                <Label>Teléfono (opcional)</Label>
+                <Label htmlFor="phone">Teléfono</Label>
                 <Input
+                  id="phone"
                   type="tel"
-                  placeholder="Teléfono del cliente"
                   value={sharePhone}
                   onChange={(e) => setSharePhone(e.target.value)}
+                  placeholder="+52 1234567890"
                 />
               </div>
             )}
-            
+
             <Button onClick={() => handleGeneratePDF(sessionStorage.getItem('lastQuoteId'))} className="w-full">
-              Generar y Compartir
+              {shareMethod === 'download' && (
+                <>
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Descargar
+                </>
+              )}
+              {shareMethod === 'email' && (
+                <>
+                  <Mail className="h-4 w-4 mr-2" />
+                  Enviar Email
+                </>
+              )}
+              {shareMethod === 'whatsapp' && (
+                <>
+                  <MessageCircle className="h-4 w-4 mr-2" />
+                  Enviar WhatsApp
+                </>
+              )}
             </Button>
           </div>
         </DialogContent>

@@ -56,16 +56,18 @@ export const calculateItemTotal = (item) => {
   if (!item) return 0;
   
   // Diferentes formas de acceder al precio y tipo
-  const basePrice = item.price || item.product?.price || item.unitPrice || item.precio || 0;
+  // La venta guarda el precio del producto en item.productPrice, no en item.product.price
+  const basePrice = item.productPrice || item.product?.price || item.unitPrice || item.precio || 0;
   const length = item.length || item.longitud || 1;
   const width = item.width || item.ancho || 1;
   const quantity = item.quantity || item.cantidad || 1;
-  const productType = item.type || item.product?.type || item.productType || item.tipo || 'ml';
+  // La venta guarda el tipo del producto en item.productType
+  const productType = item.productType || item.product?.type || item.tipo || 'ml';
   
   if (productType === 'm2') {
     return basePrice * length * width * quantity;
   } else {
-    return basePrice * length * quantity;
+    return basePrice * (length + width) * 2 * quantity;
   }
 };
 
@@ -195,7 +197,7 @@ export const generateQuotePDF = async (quote, client, items, formatCurrency, use
     // Add logo if available
     if (logoUrl) {
       try {
-        const logoBase64 = await loadImageAsBase64(logoUrl);
+        const logoBase64 = await loadImageAsBase64(url);
         if (logoBase64) {
           doc.addImage(logoBase64, 'PNG', 10, yPos, 25, 25);
           logoAdded = true;
@@ -330,7 +332,7 @@ export const generateQuotePDF = async (quote, client, items, formatCurrency, use
           }
           doc.setFontSize(8);
           doc.setFont(undefined, 'italic');
-          doc.text(`Obs: ${observations.substring(0, 50)}`, 20, yPos);
+          doc.text(`Obs: ${observations}`, 20, yPos);
           doc.setFont(undefined, 'normal');
           doc.setFontSize(9);
         }
@@ -338,74 +340,100 @@ export const generateQuotePDF = async (quote, client, items, formatCurrency, use
         yPos += 8;
       });
     } else {
-      doc.text('No hay productos en esta cotización', 20, yPos);
-      yPos += 8;
+      doc.text('No hay productos en esta cotización.', 20, yPos);
+      yPos += 10;
     }
     
-    yPos += 5;
-    doc.setLineWidth(0.1);
-    doc.line(20, yPos, 200, yPos);
-    
+    // Totals section
     yPos += 10;
     
     // Verificar si necesitamos nueva página para totales
-    if (yPos > 270) {
+    if (yPos > 250) {
       doc.addPage();
       yPos = 20;
     }
     
+    doc.setLineWidth(0.1);
+    doc.line(150, yPos, 200, yPos);
+    yPos += 5;
+    
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    
+    // Subtotal
+    doc.text('SUBTOTAL:', 160, yPos, { align: 'right' });
+    doc.text(formatCurrency(quote.total / (quote.includeIVA ? 1.16 : 1)), 200, yPos, { align: 'right' });
+    yPos += 6;
+    
+    // Descuento
+    if (quote.discountPercentage && quote.discountPercentage > 0) {
+      const discountAmount = (quote.total / (quote.includeIVA ? 1.16 : 1)) * (quote.discountPercentage / 100);
+      doc.text(`DESCUENTO (${quote.discountPercentage}%):`, 160, yPos, { align: 'right' });
+      doc.text(formatCurrency(-discountAmount), 200, yPos, { align: 'right' });
+      yPos += 6;
+    }
+    
+    // IVA
+    if (quote.includeIVA) {
+      const ivaAmount = quote.total - (quote.total / 1.16);
+      doc.text('IVA (16%):', 160, yPos, { align: 'right' });
+      doc.text(formatCurrency(ivaAmount), 200, yPos, { align: 'right' });
+      yPos += 6;
+    }
+    
+    // Total Final
+    yPos += 2;
+    doc.setLineWidth(0.5);
+    doc.line(150, yPos, 200, yPos);
+    yPos += 5;
     doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
+    doc.text('TOTAL:', 160, yPos, { align: 'right' });
+    doc.text(formatCurrency(quote.total), 200, yPos, { align: 'right' });
+    doc.setFont(undefined, 'normal');
+    yPos += 10;
     
-    // Calcular subtotal, Descuento, IVA y Total Final
-    let subtotal = quote.total || 0;
-    let ivaAmount = 0;
-    let discountAmount = 0;
-
-    // Calcular subtotal antes de IVA y descuento para mostrar desglose
-    if (quote.includeIVA) {
-      subtotal = (quote.total || 0) / 1.16;
-      ivaAmount = (quote.total || 0) - subtotal;
-    }
-    if (quote.discountPercentage > 0) {
-      const totalBeforeDiscount = subtotal / (1 - ((quote.discountPercentage || 0) / 100));
-      discountAmount = totalBeforeDiscount - subtotal;
-      subtotal = totalBeforeDiscount;
-    }
-
-    doc.text('Subtotal:', 160, yPos);
-    doc.text(formatCurrency(subtotal), 180, yPos);
-
-    if (quote.discountPercentage > 0) {
-      yPos += 7;
-      doc.text(`Descuento (${quote.discountPercentage}%):`, 160, yPos);
-      doc.text(`-${formatCurrency(discountAmount)}`, 180, yPos);
-    }
-
-    if (quote.includeIVA) {
-      yPos += 7;
-      doc.text('IVA (16%):', 160, yPos);
-      doc.text(formatCurrency(ivaAmount), 180, yPos);
-    }
-
-    yPos += 7;
-    doc.setFontSize(14);
+    // Payment Method and Advance
+    doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
-    doc.text('TOTAL:', 160, yPos);
-    doc.text(formatCurrency(quote.total || 0), 180, yPos);
+    doc.text('Método de Pago:', 20, yPos);
+    doc.setFont(undefined, 'normal');
+    doc.text(quote.paymentMethod || 'Efectivo', 50, yPos);
+    yPos += 6;
+
+    if (quote.advance && quote.advance > 0) {
+      doc.setFont(undefined, 'bold');
+      doc.text('Anticipo Recibido:', 20, yPos);
+      doc.setFont(undefined, 'normal');
+      doc.text(formatCurrency(quote.advance), 50, yPos);
+      yPos += 6;
+
+      doc.setFont(undefined, 'bold');
+      doc.text('Saldo Pendiente:', 20, yPos);
+      doc.setFont(undefined, 'normal');
+      doc.text(formatCurrency(quote.total - quote.advance), 50, yPos);
+      yPos += 6;
+    }
+    
+    // Delivery Date
+    if (quote.deliveryDate) {
+      const deliveryDate = handleDate(quote.deliveryDate);
+      doc.setFont(undefined, 'bold');
+      doc.text('Fecha de Entrega:', 20, yPos);
+      doc.setFont(undefined, 'normal');
+      doc.text(format(deliveryDate, 'dd/MM/yyyy', { locale: es }), 50, yPos);
+      yPos += 6;
+    }
     
     // Footer
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'italic');
-    doc.text('¡Gracias por su interés!', 105, 280, { align: 'center' });
-    
+    yPos = 280;
+    doc.setFontSize(8);
+    doc.text('Gracias por su preferencia.', 105, yPos, { align: 'center' });
+
     return doc;
   } catch (error) {
-    console.error('❌ Error generando PDF de cotización:', error);
-    const errorDoc = new jsPDF();
-    errorDoc.text('Error generando PDF: ' + error.message, 20, 20);
-    errorDoc.text('Verifica la consola para más detalles', 20, 30);
-    return errorDoc;
+    console.error('Error al generar PDF de cotización:', error);
+    return null;
   }
 };
 
@@ -474,7 +502,10 @@ export const generateSalePDF = async (sale, client, items, formatCurrency, userI
     const saleDate = handleDate(sale.createdAt);
     
     doc.text(`Fecha: ${format(saleDate, 'dd/MM/yyyy', { locale: es })}`, 20, yPos + 12);
-    doc.text(`Pedido #: ${sale.orderNumber || 'N/A'}`, 20, yPos + 19);
+    
+    // ID de venta - usar orderNumber
+    const orderNumber = sale.orderNumber || sale.id || 'N/A';
+    doc.text(`Pedido #: ${orderNumber}`, 20, yPos + 19);
     
     // Client info
     doc.setFontSize(12);
@@ -482,14 +513,12 @@ export const generateSalePDF = async (sale, client, items, formatCurrency, userI
     doc.text('Cliente:', 20, yPos + 32);
     doc.setFont(undefined, 'normal');
     doc.setFontSize(10);
+    
     doc.text(`Nombre: ${client.name || 'No especificado'}`, 20, yPos + 39);
     doc.text(`Email: ${client.email || 'N/A'}`, 20, yPos + 46);
     doc.text(`Teléfono: ${client.phone || 'N/A'}`, 20, yPos + 53);
-    
-    // Delivery date - CON CORRECCIÓN ESPECÍFICA PARA FECHA DE ENTREGA
-    if (sale.deliveryDate) {
-      const deliveryDate = handleDate(sale.deliveryDate);
-      doc.text(`Fecha de entrega: ${format(deliveryDate, 'dd/MM/yyyy', { locale: es })}`, 20, yPos + 60);
+    if (client.address) {
+      doc.text(`Dirección: ${client.address}`, 20, yPos + 60);
     }
     
     // Items table header
@@ -566,7 +595,7 @@ export const generateSalePDF = async (sale, client, items, formatCurrency, userI
           }
           doc.setFontSize(8);
           doc.setFont(undefined, 'italic');
-          doc.text(`Obs: ${observations.substring(0, 50)}`, 20, yPos);
+          doc.text(`Obs: ${observations}`, 20, yPos);
           doc.setFont(undefined, 'normal');
           doc.setFontSize(9);
         }
@@ -574,125 +603,115 @@ export const generateSalePDF = async (sale, client, items, formatCurrency, userI
         yPos += 8;
       });
     } else {
-      doc.text('No hay productos en esta venta', 20, yPos);
-      yPos += 8;
+      doc.text('No hay productos en esta venta.', 20, yPos);
+      yPos += 10;
     }
     
-    yPos += 5;
-    doc.setLineWidth(0.1);
-    doc.line(20, yPos, 200, yPos);
-    
-    // Calcular subtotal, descuento e IVA para desglose
-    let subtotal = sale.total || 0;
-    let ivaAmount = 0;
-    let discountAmount = 0;
-
-    if (sale.includeIVA) {
-      subtotal = (sale.total || 0) / 1.16;
-      ivaAmount = (sale.total || 0) - subtotal;
-    }
-    if (sale.discountPercentage > 0) {
-      const totalBeforeDiscount = subtotal / (1 - ((sale.discountPercentage || 0) / 100));
-      discountAmount = totalBeforeDiscount - subtotal;
-      subtotal = totalBeforeDiscount;
-    }
-
+    // Totals section
     yPos += 10;
     
     // Verificar si necesitamos nueva página para totales
-    if (yPos > 270) {
+    if (yPos > 250) {
       doc.addPage();
       yPos = 20;
     }
     
+    doc.setLineWidth(0.1);
+    doc.line(150, yPos, 200, yPos);
+    yPos += 5;
+    
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
-    doc.text('Subtotal:', 160, yPos);
-    doc.text(formatCurrency(subtotal), 180, yPos);
-
-    if (sale.discountPercentage > 0) {
-      yPos += 7;
-      doc.text(`Descuento (${sale.discountPercentage}%):`, 160, yPos);
-      doc.text(`-${formatCurrency(discountAmount)}`, 180, yPos);
+    
+    // Subtotal
+    doc.text('SUBTOTAL:', 160, yPos, { align: 'right' });
+    doc.text(formatCurrency(sale.total / (sale.includeIVA ? 1.16 : 1)), 200, yPos, { align: 'right' });
+    yPos += 6;
+    
+    // Descuento
+    if (sale.discountPercentage && sale.discountPercentage > 0) {
+      const discountAmount = (sale.total / (sale.includeIVA ? 1.16 : 1)) * (sale.discountPercentage / 100);
+      doc.text(`DESCUENTO (${sale.discountPercentage}%):`, 160, yPos, { align: 'right' });
+      doc.text(formatCurrency(-discountAmount), 200, yPos, { align: 'right' });
+      yPos += 6;
     }
-
+    
+    // IVA
     if (sale.includeIVA) {
-      yPos += 7;
-      doc.text('IVA (16%):', 160, yPos);
-      doc.text(formatCurrency(ivaAmount), 180, yPos);
+      const ivaAmount = sale.total - (sale.total / 1.16);
+      doc.text('IVA (16%):', 160, yPos, { align: 'right' });
+      doc.text(formatCurrency(ivaAmount), 200, yPos, { align: 'right' });
+      yPos += 6;
     }
-
-    yPos += 7;
-    doc.setFontSize(14);
+    
+    // Total Final
+    yPos += 2;
+    doc.setLineWidth(0.5);
+    doc.line(150, yPos, 200, yPos);
+    yPos += 5;
+    doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
-    doc.text('TOTAL:', 160, yPos);
-    doc.text(formatCurrency(sale.total || 0), 180, yPos);
+    doc.text('TOTAL:', 160, yPos, { align: 'right' });
+    doc.text(formatCurrency(sale.total), 200, yPos, { align: 'right' });
+    doc.setFont(undefined, 'normal');
+    yPos += 10;
     
-    // Payment info
-    yPos += 15;
-    
-    // Verificar si necesitamos nueva página para información de pago
-    if (yPos > 270) {
-      doc.addPage();
-      yPos = 20;
-    }
-    
+    // Payment Method and Advance
     doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
-    doc.text('Información de Pago:', 20, yPos);
+    doc.text('Método de Pago:', 20, yPos);
     doc.setFont(undefined, 'normal');
+    doc.text(sale.paymentMethod || 'Efectivo', 50, yPos);
+    yPos += 6;
+
+    // Lógica de visualización de pagos
+    if (sale.advance && sale.advance > 0 && sale.advance < sale.total) { // Si hay un anticipo parcial
+      doc.setFont(undefined, 'bold');
+      doc.text('Anticipo Recibido:', 20, yPos);
+      doc.setFont(undefined, 'normal');
+      doc.text(formatCurrency(sale.advance), 50, yPos);
+      yPos += 6;
+
+      doc.setFont(undefined, 'bold');
+      doc.text('Saldo Pendiente:', 20, yPos);
+      doc.setFont(undefined, 'normal');
+      doc.text(formatCurrency(sale.total - sale.advance), 50, yPos);
+      yPos += 6;
+    } else if (sale.amountPaid && sale.amountPaid > 0) { // Si se pagó un monto (efectivo o total)
+      doc.setFont(undefined, 'bold');
+      doc.text('Monto Pagado:', 20, yPos);
+      doc.setFont(undefined, 'normal');
+      doc.text(formatCurrency(sale.amountPaid), 50, yPos);
+      yPos += 6;
+
+      const change = sale.amountPaid - sale.total;
+      if (change > 0) {
+        doc.setFont(undefined, 'bold');
+        doc.text('Cambio:', 20, yPos);
+        doc.setFont(undefined, 'normal');
+        doc.text(formatCurrency(change), 50, yPos);
+        yPos += 6;
+      }
+    }
     
-    yPos += 7;
-    const paymentLabels = {
-      cash: 'Efectivo',
-      transfer: 'Transferencia',
-      credit: 'Fiado'
-    };
-    doc.text(`Método: ${paymentLabels[sale.paymentMethod] || sale.paymentMethod || 'N/A'}`, 20, yPos);
-    
-    if (sale.paymentMethod === 'cash') {
-      yPos += 7;
-      doc.text(`Monto Pagado: ${formatCurrency(sale.amountPaid || 0)}`, 20, yPos);
-      yPos += 7;
-      doc.text(`Cambio: ${formatCurrency(sale.change || 0)}`, 20, yPos);
-    } else if (sale.paymentMethod === 'credit') {
-      yPos += 7;
-      doc.text(`Anticipo: ${formatCurrency(sale.advance || 0)}`, 20, yPos);
-      yPos += 7;
-      doc.text(`Saldo Pendiente: ${formatCurrency((sale.total || 0) - (sale.advance || 0))}`, 20, yPos);
-    } else if (sale.paymentMethod === 'transfer' && sale.bankData) {
-      yPos += 7;
-      doc.text(`Banco: ${sale.bankData.bank || 'N/A'}`, 20, yPos);
-      yPos += 7;
-      doc.text(`Número de Cuenta: ${sale.bankData.accountNumber || 'N/A'}`, 20, yPos);
-      yPos += 7;
-      doc.text(`Titular: ${sale.bankData.accountHolder || 'N/A'}`, 20, yPos);
+    // Delivery Date
+    if (sale.deliveryDate) {
+      const deliveryDate = handleDate(sale.deliveryDate);
+      doc.setFont(undefined, 'bold');
+      doc.text('Fecha de Entrega:', 20, yPos);
+      doc.setFont(undefined, 'normal');
+      doc.text(format(deliveryDate, 'dd/MM/yyyy', { locale: es }), 50, yPos);
+      yPos += 6;
     }
     
     // Footer
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'italic');
-    doc.text('¡Gracias por su compra!', 105, 280, { align: 'center' });
-    
-    return doc;
-  } catch (error) {
-    console.error('❌ Error generando PDF de venta:', error);
-    const errorDoc = new jsPDF();
-    errorDoc.text('Error generando PDF: ' + error.message, 20, 20);
-    errorDoc.text('Verifica la consola para más detalles', 20, 30);
-    return errorDoc;
-  }
-};
+    yPos = 280;
+    doc.setFontSize(8);
+    doc.text('Gracias por su preferencia.', 105, yPos, { align: 'center' });
 
-// Función simple para testing
-export const generateSimplePDF = async () => {
-  try {
-    const doc = new jsPDF();
-    doc.text('PDF de prueba generado correctamente', 20, 20);
-    doc.text('Fecha: ' + new Date().toLocaleDateString(), 20, 30);
     return doc;
   } catch (error) {
-    console.error('Error en PDF simple:', error);
-    throw error;
+    console.error('Error al generar PDF de venta:', error);
+    return null;
   }
 };

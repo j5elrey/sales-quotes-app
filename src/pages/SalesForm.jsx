@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { db } from '@/lib/firebase';
@@ -45,6 +44,7 @@ const SalesForm = () => {
   const [sharePhone, setSharePhone] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [processDialogOpen, setProcessDialogOpen] = useState(false); // Nuevo estado
 
   useEffect(() => {
     const fetchData = async () => {
@@ -57,7 +57,7 @@ const SalesForm = () => {
       try {
         await loadClients();
         await loadProducts();
-        await loadUserSettings(); // Cargar configuración del usuario (incluye datos bancarios)
+        await loadUserSettings();
 
         if (id) {
           await loadSaleData(id);
@@ -146,7 +146,6 @@ const SalesForm = () => {
         setPaymentMethod(saleData.paymentMethod || 'cash');
         setAmountPaid(saleData.amountPaid || 0);
         setAdvance(saleData.advance || 0);
-        // Asegurarse de cargar bankData si el método de pago es transferencia
         if (saleData.paymentMethod === 'transfer' && saleData.bankData) {
           setBankData(saleData.bankData);
         }
@@ -194,18 +193,43 @@ const SalesForm = () => {
   };
 
   const addItem = () => {
-    if (products.length === 0) {
+    const availableProducts = products.filter(p => p.category !== 'proceso');
+    if (availableProducts.length === 0) {
       alert('Primero debes agregar productos en la sección de Productos');
       return;
     }
     setItems([...items, {
-      productId: products[0].id,
-      product: products[0],
+      productId: availableProducts[0].id,
+      product: availableProducts[0],
       length: 1,
       width: 1,
       quantity: 1,
       observations: ''
     }]);
+  };
+
+  const addProcess = () => {
+    const availableProcesses = products.filter(p => p.category === 'proceso');
+    if (availableProcesses.length === 0) {
+      alert('Primero debes agregar procesos en la sección de Productos');
+      return;
+    }
+    setProcessDialogOpen(true);
+  };
+
+  const handleSelectProcess = (processId) => {
+    const selectedProcess = products.find(p => p.id === processId);
+    if (selectedProcess) {
+      setItems([...items, {
+        productId: selectedProcess.id,
+        product: selectedProcess,
+        length: 1,
+        width: 1,
+        quantity: 1,
+        observations: ''
+      }]);
+      setProcessDialogOpen(false);
+    }
   };
 
   const removeItem = (index) => {
@@ -218,9 +242,14 @@ const SalesForm = () => {
       const product = products.find(p => p.id === value);
       newItems[index].productId = value;
       newItems[index].product = product;
+      // Asegurar que los campos numéricos se mantengan como números al cambiar de producto
+      newItems[index].length = newItems[index].length || 1;
+      newItems[index].width = newItems[index].width || 1;
+      newItems[index].quantity = newItems[index].quantity || 1;
     } else if (field === 'observations') {
       newItems[index][field] = value;
     } else {
+      // Asegurar que los valores numéricos se guarden como números
       newItems[index][field] = parseFloat(value) || 0;
     }
     setItems(newItems);
@@ -259,7 +288,7 @@ const SalesForm = () => {
             currentUser.uid
         );
 
-        if (pdfDoc) { // Verificar si pdfDoc es válido
+        if (pdfDoc) {
             if (shareMethod === 'download') {
                 pdfDoc.save(`Venta_${client.name}_${new Date().toLocaleDateString()}.pdf`);
             } else if (shareMethod === 'email') {
@@ -286,22 +315,12 @@ const SalesForm = () => {
       alert('Agrega al menos un producto');
       return;
     }
-    if (paymentMethod === 'cash' && amountPaid < total) {
-      alert('El monto pagado debe ser mayor o igual al total');
-      return;
-    }
-    if (paymentMethod === 'credit' && advance > total) {
-      alert('El anticipo no puede ser mayor al total');
-      return;
-    }
-    if (paymentMethod === 'credit' && advance === 0 && total > 0) {
-      alert('Debes ingresar un anticipo para ventas a fiado si el total es mayor a 0');
-      return;
-    }
 
     try {
       const client = clients.find(c => c.id === selectedClient);
-      const orderNumber = id ? null : generateOrderNumber();
+
+      // CORRECCIÓN 1: Generar el número de pedido y recuperarlo si estamos editando
+      const orderNumber = id ? (await getDoc(doc(db, 'sales', id))).data().orderNumber : generateOrderNumber();
 
       const saleData = {
         userId: currentUser.uid,
@@ -321,18 +340,16 @@ const SalesForm = () => {
           total: calculateItemTotal(item)
         })),
         total: total,
-        orderNumber: id ? (await getDoc(doc(db, 'sales', id))).data().orderNumber : orderNumber,
-        deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
-        paymentMethod: paymentMethod,
-        amountPaid: paymentMethod === 'cash' ? parseFloat(amountPaid) : null,
-        change: paymentMethod === 'cash' ? change : null,
-        advance: paymentMethod === 'credit' ? parseFloat(advance) : null,
-        status: 'pending',
         includeIVA: includeIVA,
         discountPercentage: discountPercentage,
-        bankData: paymentMethod === 'transfer' ? bankData : null, // Usa los datos bancarios del estado
+        deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
+        paymentMethod: paymentMethod,
+        amountPaid: parseFloat(amountPaid) || 0,
+        advance: parseFloat(advance) || 0,
+        status: 'pending',
         createdAt: id ? (await getDoc(doc(db, 'sales', id))).data().createdAt : new Date(),
         updatedAt: new Date(),
+        orderNumber: orderNumber, // Agregar el número de pedido
       };
 
       let docRef;
@@ -343,6 +360,10 @@ const SalesForm = () => {
       } else {
         docRef = await addDoc(collection(db, 'sales'), saleData);
         alert('Venta guardada con éxito!');
+        
+        // CORRECCIÓN 2: Eliminar la navegación y en su lugar recargar los datos de la venta
+        // para que el componente tenga el orderNumber y el ID correctos para el PDF.
+        await loadSaleData(docRef.id);
       }
 
       sessionStorage.setItem('lastSaleId', docRef.id);
@@ -362,12 +383,14 @@ const SalesForm = () => {
     return <div className="text-center py-8 text-red-500">{error}</div>;
   }
 
+  const availableProcesses = products.filter(p => p.category === 'proceso');
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">{id ? 'Editar Venta' : 'Nueva Venta'}</h1>
         <p className="text-muted-foreground mt-1">
-          {id ? 'Edita los detalles de la venta existente' : 'Registra una nueva venta y genera el ticket'}
+          {id ? 'Edita los detalles de la venta existente' : 'Registra una nueva venta'}
         </p>
       </div>
 
@@ -387,7 +410,7 @@ const SalesForm = () => {
                   <SelectContent>
                     {clients.map(client => (
                       <SelectItem key={client.id} value={client.id}>
-                        {client.name} - {client.email}
+                        {client.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -399,12 +422,20 @@ const SalesForm = () => {
 
         <Card>
           <CardHeader>
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center gap-2">
               <CardTitle>Productos</CardTitle>
-              <Button type="button" onClick={addItem} size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Agregar Producto
-              </Button>
+              <div className="flex gap-2">
+                <Button type="button" onClick={addItem} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Agregar Producto
+                </Button>
+                {availableProcesses.length > 0 && (
+                  <Button type="button" onClick={addProcess} size="sm" variant="outline">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Agregar Proceso
+                  </Button>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -435,7 +466,6 @@ const SalesForm = () => {
                         </SelectContent>
                       </Select>
                     </div>
-                    
                     <div>
                       <Label>Largo (m)</Label>
                       <Input
@@ -443,9 +473,9 @@ const SalesForm = () => {
                         step="0.01"
                         value={item.length}
                         onChange={(e) => updateItem(index, 'length', e.target.value)}
+                        disabled={item.product?.type === 'unidad' || item.product?.type === 'proceso'}
                       />
                     </div>
-                    
                     <div>
                       <Label>Ancho (m)</Label>
                       <Input
@@ -453,45 +483,33 @@ const SalesForm = () => {
                         step="0.01"
                         value={item.width}
                         onChange={(e) => updateItem(index, 'width', e.target.value)}
+                        disabled={item.product?.type === 'unidad' || item.product?.type === 'proceso'}
                       />
                     </div>
-                    
                     <div>
                       <Label>Cantidad</Label>
                       <Input
                         type="number"
+                        step="1"
                         value={item.quantity}
                         onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <Label>Observaciones</Label>
-                      <Input
-                        type="text"
-                        placeholder="Observaciones del producto"
-                        value={item.observations}
-                        onChange={(e) => updateItem(index, 'observations', e.target.value)}
+                        disabled={item.product?.type === 'metro_cuadrado' || item.product?.type === 'metro_lineal'}
                       />
                     </div>
                   </div>
-                  
-                  <div className="flex justify-between items-center">
-                    <div className="text-sm text-muted-foreground">
-                      Tipo: {item.product?.type === 'm2' ? 'Metro cuadrado' : 'Metro lineal'}
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="font-semibold">
-                        Total: {formatCurrency(calculateItemTotal(item))}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => removeItem(index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                  <div>
+                    <Label>Observaciones (Opcional)</Label>
+                    <Input
+                      type="text"
+                      value={item.observations}
+                      onChange={(e) => updateItem(index, 'observations', e.target.value)}
+                    />
+                  </div>
+                  <div className="flex justify-between items-center pt-2">
+                    <p className="font-semibold">Subtotal: {formatCurrency(calculateItemTotal(item))}</p>
+                    <Button type="button" variant="destructive" size="sm" onClick={() => removeItem(index)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -501,58 +519,111 @@ const SalesForm = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Detalles de Pago y Entrega</CardTitle>
+            <CardTitle>Resumen y Pago</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="deliveryDate">Fecha de Entrega</Label>
+                <Label>Fecha de Entrega (Opcional)</Label>
                 <Input
-                  id="deliveryDate"
                   type="date"
                   value={deliveryDate}
                   onChange={(e) => setDeliveryDate(e.target.value)}
                 />
               </div>
-
               <div>
-                <Label htmlFor="paymentMethod">Método de Pago</Label>
+                <Label>Descuento (%)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={discountPercentage}
+                  onChange={(e) => setDiscountPercentage(parseFloat(e.target.value) || 0)}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="includeIVA"
+                checked={includeIVA}
+                onChange={(e) => setIncludeIVA(e.target.checked)}
+                className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
+              />
+              <Label htmlFor="includeIVA">Incluir IVA (16%)</Label>
+            </div>
+
+            <div className="border-t pt-4 space-y-2">
+              <div className="flex justify-between font-medium">
+                <span>Subtotal (sin IVA/Desc.):</span>
+                <span>{formatCurrency(items.reduce((acc, item) => acc + calculateItemTotal(item), 0))}</span>
+              </div>
+              <div className="flex justify-between font-medium">
+                <span>Descuento Aplicado:</span>
+                <span>{formatCurrency(items.reduce((acc, item) => acc + calculateItemTotal(item), 0) * (discountPercentage / 100))}</span>
+              </div>
+              <div className="flex justify-between font-medium">
+                <span>IVA (16%):</span>
+                <span>{formatCurrency(includeIVA ? (total / 1.16) * 0.16 : 0)}</span>
+              </div>
+              <div className="flex justify-between text-2xl font-bold text-indigo-600">
+                <span>TOTAL:</span>
+                <span>{formatCurrency(total)}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+              <div>
+                <Label>Método de Pago</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecciona un método de pago" />
+                    <SelectValue placeholder="Selecciona método" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cash">Efectivo</SelectItem>
                     <SelectItem value="transfer">Transferencia</SelectItem>
-                    <SelectItem value="credit">Fiado</SelectItem>
+                    <SelectItem value="card">Tarjeta</SelectItem>
+                    <SelectItem value="credit">Crédito</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               {paymentMethod === 'cash' && (
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="amountPaid">Monto Pagado</Label>
-                    <Input
-                      id="amountPaid"
-                      type="number"
-                      step="0.01"
-                      value={amountPaid}
-                      onChange={(e) => setAmountPaid(parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div className="flex justify-between items-center text-lg font-semibold">
-                    <span>Cambio:</span>
-                    <span>{formatCurrency(change)}</span>
-                  </div>
+                <div>
+                  <Label>Monto Pagado (Efectivo)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={amountPaid}
+                    onChange={(e) => setAmountPaid(parseFloat(e.target.value) || 0)}
+                  />
+                  <p className={`mt-2 font-semibold ${change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    Cambio: {formatCurrency(change)}
+                  </p>
+                </div>
+              )}
+
+              {paymentMethod === 'transfer' && (
+                <div className="space-y-2">
+                  <Label>Anticipo/Monto Transferido</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={advance}
+                    onChange={(e) => setAdvance(parseFloat(e.target.value) || 0)}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Datos bancarios: {bankData.bank} - {bankData.accountNumber}
+                  </p>
                 </div>
               )}
 
               {paymentMethod === 'credit' && (
                 <div>
-                  <Label htmlFor="advance">Anticipo</Label>
+                  <Label>Anticipo/Monto a Crédito</Label>
                   <Input
-                    id="advance"
                     type="number"
                     step="0.01"
                     value={advance}
@@ -560,123 +631,115 @@ const SalesForm = () => {
                   />
                 </div>
               )}
-
-              {paymentMethod === 'transfer' && (
-                <div className="space-y-2 p-4 border rounded-md bg-gray-50">
-                  <h4 className="font-semibold">Datos para la Transferencia</h4>
-                  <p><strong>Banco:</strong> {bankData.bank || 'No especificado'}</p>
-                  <p><strong>Cuenta:</strong> {bankData.accountNumber || 'No especificado'}</p>
-                  <p><strong>Titular:</strong> {bankData.accountHolder || 'No especificado'}</p>
-                </div>
-              )}
             </div>
+
+            <Button type="submit" className="w-full">
+              {id ? 'Actualizar Venta' : 'Guardar Venta'}
+            </Button>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Resumen y Opciones</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="includeIVA" className="text-lg">Incluir IVA (16%)</Label>
-                <Input
-                  id="includeIVA"
-                  type="checkbox"
-                  checked={includeIVA}
-                  onChange={(e) => setIncludeIVA(e.target.checked)}
-                  className="w-5 h-5"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="discount" className="text-lg">Descuento</Label>
-                <Select value={discountPercentage.toString()} onValueChange={(value) => setDiscountPercentage(parseFloat(value))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona un descuento" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">0%</SelectItem>
-                    <SelectItem value="5">5%</SelectItem>
-                    <SelectItem value="10">10%</SelectItem>
-                    <SelectItem value="15">15%</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex justify-between items-center text-2xl font-bold">
-                <span>Total:</span>
-                <span>{formatCurrency(total)}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="flex gap-4">
-          <Button type="submit" className="flex-1">
-            {id ? 'Actualizar Venta' : 'Guardar Venta'}
-          </Button>
-        </div>
       </form>
 
+      {/* Dialogo de Procesos */}
+      <Dialog open={processDialogOpen} onOpenChange={setProcessDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Seleccionar Proceso</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p>Selecciona el proceso que deseas agregar a la venta:</p>
+            {availableProcesses.map(process => (
+              <Button
+                key={process.id}
+                onClick={() => handleSelectProcess(process.id)}
+                variant="outline"
+                className="w-full justify-start"
+              >
+                {process.name} - {formatCurrency(process.price)}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialogo de Compartir */}
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Compartir Ticket de Venta</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-2">
+            <p className="text-sm text-muted-foreground">
+              La venta ha sido guardada. Selecciona cómo deseas compartir el ticket/factura.
+            </p>
+
+            <div className="grid grid-cols-3 gap-4">
               <Button
                 variant={shareMethod === 'download' ? 'default' : 'outline'}
                 onClick={() => setShareMethod('download')}
               >
-                <FileDown className="h-4 w-4 mr-2" />
-                Descargar
+                <FileDown className="h-4 w-4 mr-2" /> Descargar
               </Button>
               <Button
                 variant={shareMethod === 'email' ? 'default' : 'outline'}
                 onClick={() => setShareMethod('email')}
               >
-                <Mail className="h-4 w-4 mr-2" />
-                Email
+                <Mail className="h-4 w-4 mr-2" /> Email
               </Button>
               <Button
                 variant={shareMethod === 'whatsapp' ? 'default' : 'outline'}
                 onClick={() => setShareMethod('whatsapp')}
               >
-                <MessageCircle className="h-4 w-4 mr-2" />
-                WhatsApp
+                <MessageCircle className="h-4 w-4 mr-2" /> WhatsApp
               </Button>
             </div>
-            
+
             {shareMethod === 'email' && (
-              <div>
-                <Label>Email (opcional)</Label>
+              <div className="space-y-2">
+                <Label htmlFor="share-email">Email del Cliente</Label>
                 <Input
+                  id="share-email"
                   type="email"
-                  placeholder="Email del cliente"
                   value={shareEmail}
                   onChange={(e) => setShareEmail(e.target.value)}
+                  placeholder="ejemplo@cliente.com"
                 />
+                <Button
+                  className="w-full"
+                  onClick={() => handleGeneratePDF(sessionStorage.getItem('lastSaleId'))}
+                >
+                  Enviar por Email
+                </Button>
               </div>
             )}
-            
+
             {shareMethod === 'whatsapp' && (
-              <div>
-                <Label>Teléfono (opcional)</Label>
+              <div className="space-y-2">
+                <Label htmlFor="share-phone">Teléfono del Cliente (WhatsApp)</Label>
                 <Input
+                  id="share-phone"
                   type="tel"
-                  placeholder="Teléfono del cliente"
                   value={sharePhone}
                   onChange={(e) => setSharePhone(e.target.value)}
+                  placeholder="Ej: 5215512345678"
                 />
+                <Button
+                  className="w-full"
+                  onClick={() => handleGeneratePDF(sessionStorage.getItem('lastSaleId'))}
+                >
+                  Enviar por WhatsApp
+                </Button>
               </div>
             )}
-            
-            <Button onClick={() => handleGeneratePDF(sessionStorage.getItem('lastSaleId'))} className="w-full">
-              Generar y Compartir
-            </Button>
+
+            {shareMethod === 'download' && (
+              <Button
+                className="w-full"
+                onClick={() => handleGeneratePDF(sessionStorage.getItem('lastSaleId'))}
+              >
+                Descargar PDF
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -685,5 +748,3 @@ const SalesForm = () => {
 };
 
 export default SalesForm;
-
-

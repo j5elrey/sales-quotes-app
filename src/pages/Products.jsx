@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const Products = () => {
   const { currentUser } = useAuth();
@@ -18,10 +19,12 @@ const Products = () => {
   const [products, setProducts] = useState([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [activeTab, setActiveTab] = useState('productos');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     type: 'm2',
+    category: 'producto',
     price: ''
   });
 
@@ -68,7 +71,7 @@ const Products = () => {
       
       setIsDialogOpen(false);
       setEditingProduct(null);
-      setFormData({ name: '', description: '', type: 'm2', price: '' });
+      setFormData({ name: '', description: '', type: 'm2', category: 'producto', price: '' });
       loadProducts();
     } catch (error) {
       console.error('Error al guardar producto:', error);
@@ -81,6 +84,7 @@ const Products = () => {
       name: product.name,
       description: product.description,
       type: product.type,
+      category: product.category || 'producto',
       price: product.price.toString()
     });
     setIsDialogOpen(true);
@@ -104,32 +108,101 @@ const Products = () => {
     });
   };
 
+  // Filtrar productos y procesos
+  const filteredProducts = products.filter(p => p.category === 'producto' || !p.category);
+  const filteredProcesses = products.filter(p => p.category === 'proceso');
+
+  const renderTable = (data) => (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Nombre</TableHead>
+          <TableHead>Descripción</TableHead>
+          <TableHead>Tipo</TableHead>
+          <TableHead>Precio</TableHead>
+          <TableHead className="text-right">Acciones</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {data.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={5} className="text-center text-muted-foreground">
+              No hay {activeTab === 'productos' ? 'productos' : 'procesos'} registrados
+            </TableCell>
+          </TableRow>
+        ) : (
+          data.map((product) => (
+            <TableRow key={product.id}>
+              <TableCell className="font-medium">{product.name}</TableCell>
+              <TableCell>{product.description}</TableCell>
+              <TableCell>
+                {product.type === 'm2' ? 'Metro cuadrado (m²)' : 'Metro lineal'}
+              </TableCell>
+              <TableCell>{formatCurrency(product.price)}</TableCell>
+              <TableCell className="text-right">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleEdit(product)}
+                >
+                  <Edit className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDelete(product.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))
+        )}
+      </TableBody>
+    </Table>
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Productos</h1>
+          <h1 className="text-3xl font-bold">Productos y Procesos</h1>
           <p className="text-muted-foreground mt-1">
-            Gestiona tu catálogo de productos
+            Gestiona tu catálogo de productos y procesos
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={() => {
               setEditingProduct(null);
-              setFormData({ name: '', description: '', type: 'm2', price: '' });
+              setFormData({ name: '', description: '', type: 'm2', category: 'producto', price: '' });
             }}>
               <Plus className="h-4 w-4 mr-2" />
-              Nuevo Producto
+              Nuevo Producto/Proceso
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                {editingProduct ? 'Editar Producto' : 'Nuevo Producto'}
+                {editingProduct ? 'Editar Producto/Proceso' : 'Nuevo Producto/Proceso'}
               </DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <Label htmlFor="category">Categoría</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) => setFormData({ ...formData, category: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="producto">Producto</SelectItem>
+                    <SelectItem value="proceso">Proceso</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div>
                 <Label htmlFor="name">Nombre</Label>
                 <Input
@@ -160,7 +233,7 @@ const Products = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="m2">Metro cuadrado (m²)</SelectItem>
-                    <SelectItem value="linear">Metro lineal</SelectItem>
+                    <SelectItem value="ml">Metro lineal</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -184,60 +257,34 @@ const Products = () => {
         </Dialog>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Lista de Productos</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nombre</TableHead>
-                <TableHead>Descripción</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Precio</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {products.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    No hay productos registrados
-                  </TableCell>
-                </TableRow>
-              ) : (
-                products.map((product) => (
-                  <TableRow key={product.id}>
-                    <TableCell className="font-medium">{product.name}</TableCell>
-                    <TableCell>{product.description}</TableCell>
-                    <TableCell>
-                      {product.type === 'm2' ? 'Metro cuadrado (m²)' : 'Metro lineal'}
-                    </TableCell>
-                    <TableCell>{formatCurrency(product.price)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(product)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(product.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="productos">Productos</TabsTrigger>
+          <TabsTrigger value="procesos">Procesos</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="productos">
+          <Card>
+            <CardHeader>
+              <CardTitle>Lista de Productos</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {renderTable(filteredProducts)}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="procesos">
+          <Card>
+            <CardHeader>
+              <CardTitle>Lista de Procesos</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {renderTable(filteredProcesses)}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
