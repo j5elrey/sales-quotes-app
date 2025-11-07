@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot, query, where, Timestamp } from 'firebase/firestore';
+import { startOfWeek, endOfWeek } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Users, Package, FileText, ShoppingCart, TrendingUp } from 'lucide-react';
@@ -47,8 +48,18 @@ const Home = () => {
     });
     unsubscribers.push(quotesUnsub);
 
-    // Ventas
-    const salesUnsub = onSnapshot(collection(db, 'sales'), (snapshot) => {
+    // Ventas - Filtrar solo de la semana en curso
+    const now = new Date();
+    const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Lunes
+    const weekEnd = endOfWeek(now, { weekStartsOn: 1 }); // Domingo
+    
+    const salesQuery = query(
+      collection(db, 'sales'),
+      where('createdAt', '>=', Timestamp.fromDate(weekStart)),
+      where('createdAt', '<=', Timestamp.fromDate(weekEnd))
+    );
+    
+    const salesUnsub = onSnapshot(salesQuery, (snapshot) => {
       let totalRevenue = 0;
       snapshot.docs.forEach(doc => {
         totalRevenue += doc.data().total || 0;
@@ -124,7 +135,7 @@ const Home = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-900">{stats.sales}</div>
-            <p className="text-xs text-green-700 mt-1">Ventas registradas</p>
+            <p className="text-xs text-green-700 mt-1">Ventas esta semana</p>
           </CardContent>
         </Card>
 
@@ -137,7 +148,7 @@ const Home = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-indigo-900">{formatCurrency(stats.totalRevenue)}</div>
-            <p className="text-xs text-indigo-700 mt-1">De todas las ventas</p>
+            <p className="text-xs text-indigo-700 mt-1">Ingresos de esta semana</p>
           </CardContent>
         </Card>
       </div>
