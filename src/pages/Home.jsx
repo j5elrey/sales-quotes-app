@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, onSnapshot, query, where, Timestamp } from 'firebase/firestore';
-import { startOfWeek, endOfWeek } from 'date-fns';
+import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Users, Package, FileText, ShoppingCart, TrendingUp } from 'lucide-react';
@@ -30,35 +29,33 @@ const Home = () => {
     const unsubscribers = [];
 
     // Clientes
-    const clientsUnsub = onSnapshot(collection(db, 'clients'), (snapshot) => {
+    const clientsRef = collection(db, 'clients');
+    const clientsQuery = query(clientsRef, where('userId', '==', currentUser.uid));
+    const clientsUnsub = onSnapshot(clientsQuery, (snapshot) => {
       setStats(prev => ({ ...prev, clients: snapshot.size }));
     });
     unsubscribers.push(clientsUnsub);
 
     // Productos
-    const productsUnsub = onSnapshot(collection(db, 'products'), (snapshot) => {
+    const productsRef = collection(db, 'products');
+    const productsQuery = query(productsRef, where('userId', '==', currentUser.uid));
+    const productsUnsub = onSnapshot(productsQuery, (snapshot) => {
       setStats(prev => ({ ...prev, products: snapshot.size }));
     });
     unsubscribers.push(productsUnsub);
 
     // Cotizaciones
-    const quotesUnsub = onSnapshot(collection(db, 'quotes'), (snapshot) => {
+    const quotesRef = collection(db, 'quotes');
+    const quotesQuery = query(quotesRef, where('userId', '==', currentUser.uid));
+    const quotesUnsub = onSnapshot(quotesQuery, (snapshot) => {
       const pendingCount = snapshot.docs.filter(doc => doc.data().status === 'pending').length;
       setStats(prev => ({ ...prev, quotes: snapshot.size, pendingQuotes: pendingCount }));
     });
     unsubscribers.push(quotesUnsub);
 
-    // Ventas - Filtrar solo de la semana en curso
-    const now = new Date();
-    const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Lunes
-    const weekEnd = endOfWeek(now, { weekStartsOn: 1 }); // Domingo
-    
-    const salesQuery = query(
-      collection(db, 'sales'),
-      where('createdAt', '>=', Timestamp.fromDate(weekStart)),
-      where('createdAt', '<=', Timestamp.fromDate(weekEnd))
-    );
-    
+    // Ventas
+    const salesRef = collection(db, 'sales');
+    const salesQuery = query(salesRef, where('userId', '==', currentUser.uid));
     const salesUnsub = onSnapshot(salesQuery, (snapshot) => {
       let totalRevenue = 0;
       snapshot.docs.forEach(doc => {
@@ -135,7 +132,7 @@ const Home = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-900">{stats.sales}</div>
-            <p className="text-xs text-green-700 mt-1">Ventas esta semana</p>
+            <p className="text-xs text-green-700 mt-1">Ventas registradas</p>
           </CardContent>
         </Card>
 
@@ -148,7 +145,7 @@ const Home = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-indigo-900">{formatCurrency(stats.totalRevenue)}</div>
-            <p className="text-xs text-indigo-700 mt-1">Ingresos de esta semana</p>
+            <p className="text-xs text-indigo-700 mt-1">De todas las ventas</p>
           </CardContent>
         </Card>
       </div>

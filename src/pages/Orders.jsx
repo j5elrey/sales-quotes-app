@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, updateDoc, doc, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { FileText, Eye, Edit2, Trash2 } from 'lucide-react';
+import { FileText, Eye, Edit2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { generateSalePDF } from '@/lib/pdfUtils';
@@ -27,7 +27,9 @@ const Orders = () => {
     if (!currentUser) return;
 
     // Suscribirse a cambios en tiempo real
-    const unsubscribe = onSnapshot(collection(db, 'sales'), (snapshot) => {
+    const salesRef = collection(db, 'sales');
+    const q = query(salesRef, where('userId', '==', currentUser.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       let ordersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -49,21 +51,6 @@ const Orders = () => {
 
     return () => unsubscribe();
   }, [currentUser, filterStatus]);
-
-  const handleDeleteOrder = async (orderId) => {
-    if (!window.confirm('¿Está seguro de que desea eliminar este pedido cancelado? Esta acción es irreversible.')) {
-      return;
-    }
-
-    try {
-      await deleteDoc(doc(db, 'sales', orderId));
-      // onSnapshot se encargará de actualizar el estado 'orders' automáticamente
-      alert('Pedido eliminado con éxito.');
-    } catch (error) {
-      console.error('Error al eliminar pedido:', error);
-      alert('Error al eliminar el pedido.');
-    }
-  };
 
   const isDeliveryDateUrgent = (deliveryDate) => {
     if (!deliveryDate || !deliveryDate.toDate) return false;
@@ -300,9 +287,9 @@ const Orders = () => {
                       </div>
                     </div>
 
-	                    {/* Actions */}
-	                    <div className="flex gap-2">
-	                      <Button
+                    {/* Actions */}
+                    <div className="flex gap-2">
+                      <Button
                         onClick={() => handleViewPDF(order)}
                         variant="outline"
                         size="sm"
@@ -318,20 +305,9 @@ const Orders = () => {
                         className="flex-1"
                       >
                         <FileText className="h-4 w-4 mr-2" />
-	                        Descargar
-	                      </Button>
-	                      {order.status === 'cancelled' && (
-	                        <Button
-	                          onClick={() => handleDeleteOrder(order.id)}
-	                          variant="destructive"
-	                          size="sm"
-	                          className="flex-1"
-	                        >
-	                          <Trash2 className="h-4 w-4 mr-2" />
-	                          Eliminar
-	                        </Button>
-	                      )}
-	                    </div>
+                        Descargar
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -378,3 +354,4 @@ const Orders = () => {
 };
 
 export default Orders;
+  

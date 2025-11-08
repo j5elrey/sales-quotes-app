@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,9 @@ const Clients = () => {
     if (!currentUser) return;
     
     try {
-      const querySnapshot = await getDocs(collection(db, 'clients'));
+      const clientsRef = collection(db, 'clients');
+      const q = query(clientsRef, where('userId', '==', currentUser.uid));
+      const querySnapshot = await getDocs(q);
       const clientsData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, getDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, getDoc, doc, updateDoc, query, where } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -105,7 +105,9 @@ const SalesForm = () => {
   const loadClients = async () => {
     if (!currentUser) return;
     try {
-      const querySnapshot = await getDocs(collection(db, 'clients'));
+      const clientsRef = collection(db, 'clients');
+      const q = query(clientsRef, where('userId', '==', currentUser.uid));
+      const querySnapshot = await getDocs(q);
       const clientsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setClients(clientsData);
     } catch (err) {
@@ -117,7 +119,9 @@ const SalesForm = () => {
   const loadProducts = async () => {
     if (!currentUser) return;
     try {
-      const querySnapshot = await getDocs(collection(db, 'products'));
+      const productsRef = collection(db, 'products');
+      const q = query(productsRef, where('userId', '==', currentUser.uid));
+      const querySnapshot = await getDocs(q);
       const productsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setProducts(productsData);
     } catch (err) {

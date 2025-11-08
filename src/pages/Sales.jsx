@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, query, where } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -35,7 +35,9 @@ const Sales = () => {
     setLoading(true);
     setError(null);
     try {
-      const querySnapshot = await getDocs(collection(db, 'sales'));
+      const salesRef = collection(db, 'sales');
+      const q = query(salesRef, where('userId', '==', currentUser.uid));
+      const querySnapshot = await getDocs(q);
       const salesData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
